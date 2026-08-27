@@ -14,14 +14,30 @@
 
 ## v0.2 — Observe real runtime journeys
 
-- [ ] Linux eBPF observer
-- [ ] PID ↔ TCP connection correlation
-- [ ] DNS observation
-- [ ] file-open observation
-- [ ] bounded `alivespec learn <journey>` recording window
-- [ ] evidence provenance
-- [ ] dependency confidence scoring
+### v0.2-alpha.1
+
+- [x] observer abstraction
+- [x] Linux eBPF recording through `bpftrace`
+- [x] bounded `alivespec record <journey>` window
+- [x] process execution observation
+- [x] outgoing IPv4 TCP connection observation
+- [x] process ↔ TCP dependency attribution
+- [x] file-open observation with config-file noise filtering
+- [x] evidence provenance
+- [x] observation counts and initial confidence values
+- [x] verification of learned processes and TCP dependencies
+- [x] terminal UI layer for recording output
+
+### Next v0.2 slices
+
+- [ ] DNS observation without retaining query payloads
+- [ ] IPv6 TCP observation
+- [ ] process-tree / descendant tracking
 - [ ] ignore / confirm workflow
+- [ ] confidence scoring based on repeated successful journeys
+- [ ] native `cilium/ebpf` backend
+- [ ] graceful backend capability detection
+- [ ] automated eBPF integration test environment
 
 ## v0.3 — Better operational proofs
 
