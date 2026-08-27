@@ -54,11 +54,17 @@ func Run(args []string) error {
 
 func flatten(c *spec.Contract) map[string]struct{} {
 	out := map[string]struct{}{}
+	for _, r := range c.Requires.Processes {
+		out[fmt.Sprintf("process:%s:running=%t", r.Name, r.Running)] = struct{}{}
+	}
 	for _, r := range c.Requires.Services {
 		out[fmt.Sprintf("service:%s:active=%t", r.Name, r.Active)] = struct{}{}
 	}
 	for _, r := range c.Requires.Listeners {
 		out[fmt.Sprintf("listener:%s:%d", r.Protocol, r.Port)] = struct{}{}
+	}
+	for _, r := range c.Requires.Connections {
+		out[fmt.Sprintf("connection:%s:%s:%d", r.Protocol, r.Host, r.Port)] = struct{}{}
 	}
 	for _, r := range c.Requires.DNS {
 		out[fmt.Sprintf("dns:%s:resolves=%t", r.Name, r.Resolves)] = struct{}{}
