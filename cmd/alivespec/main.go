@@ -12,6 +12,11 @@ import (
 
 const version = "0.2.0-alpha.1"
 
+type quietError interface {
+	error
+	Quiet() bool
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -41,7 +46,9 @@ func main() {
 	}
 
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		if quiet, ok := err.(quietError); !ok || !quiet.Quiet() {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		}
 		os.Exit(1)
 	}
 }
