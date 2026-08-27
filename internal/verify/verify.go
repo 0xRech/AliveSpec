@@ -34,12 +34,19 @@ func Run(args []string) error {
 	fmt.Printf("AliveSpec: %s\n\n", c.Metadata.Name)
 
 	var results []result
+	for _, req := range c.Requires.Processes {
+		results = append(results, result{runtimeinfo.IsProcessRunning(req.Name), fmt.Sprintf("process %s running", req.Name)})
+	}
 	for _, req := range c.Requires.Services {
 		results = append(results, result{runtimeinfo.IsServiceActive(req.Name), fmt.Sprintf("service %s active", req.Name)})
 	}
 	for _, req := range c.Requires.Listeners {
 		ok := req.Protocol == "tcp" && runtimeinfo.IsTCPListening(req.Port)
 		results = append(results, result{ok, fmt.Sprintf("%s/%d listening", req.Protocol, req.Port)})
+	}
+	for _, req := range c.Requires.Connections {
+		ok, detail := verifyConnection(req, *timeout)
+		results = append(results, result{ok, detail})
 	}
 	for _, req := range c.Requires.DNS {
 		_, err := net.LookupHost(req.Name)
@@ -68,6 +75,19 @@ func Run(args []string) error {
 		return fmt.Errorf("%d contract check(s) failed", failures)
 	}
 	return nil
+}
+
+func verifyConnection(req spec.ConnectionRequirement, timeout time.Duration) (bool, string) {
+	if req.Protocol != "tcp" {
+		return false, fmt.Sprintf("unsupported connection protocol %s", req.Protocol)
+	}
+	address := net.JoinHostPort(req.Host, fmt.Sprint(req.Port))
+	conn, err := net.DialTimeout("tcp", address, timeout)
+	if err != nil {
+		return false, fmt.Sprintf("TCP %s unreachable: %v", address, err)
+	}
+	_ = conn.Close()
+	return true, fmt.Sprintf("TCP %s reachable", address)
 }
 
 func verifyTLS(req spec.TLSRequirement, timeout time.Duration) (bool, string) {
