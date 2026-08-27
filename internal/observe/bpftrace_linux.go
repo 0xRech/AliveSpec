@@ -16,6 +16,7 @@ import (
 
 type BPFTrace struct {
 	Processes []string
+	DNSProbe  bool
 }
 
 var safeComm = regexp.MustCompile(`^[A-Za-z0-9_.:+-]{1,32}$`)
@@ -29,10 +30,15 @@ func NewBPFTrace(processes []string) (Observer, error) {
 			return nil, fmt.Errorf("invalid --comm value %q", process)
 		}
 	}
-	return &BPFTrace{Processes: processes}, nil
+	return &BPFTrace{Processes: processes, DNSProbe: supportsDNSProbe()}, nil
 }
 
-func (b *BPFTrace) Name() string { return "eBPF / bpftrace" }
+func (b *BPFTrace) Name() string {
+	if b.DNSProbe {
+		return "eBPF / bpftrace · DNS enabled"
+	}
+	return "eBPF / bpftrace"
+}
 
 func (b *BPFTrace) Start(ctx context.Context) (<-chan Event, <-chan error, error) {
 	cmd := exec.CommandContext(ctx, "bpftrace", "-q", "-e", b.script())
@@ -83,7 +89,19 @@ func (b *BPFTrace) Start(ctx context.Context) (<-chan Event, <-chan error, error
 
 func (b *BPFTrace) script() string {
 	filter := b.filter()
+	dnsProbe := ""
+	if b.DNSProbe {
+		dnsProbe = fmt.Sprintf(`
+uprobe:libc.so.6:getaddrinfo %s
+{
+  printf("AS|DNS|%%d|%%s|%%s\n", pid, comm, str(arg0));
+}
+`, filter)
+	}
+
 	return fmt.Sprintf(`#include <linux/in.h>
+#include <linux/in6.h>
+#include <linux/socket.h>
 
 tracepoint:sched:sched_process_exec %s
 {
@@ -97,12 +115,17 @@ tracepoint:syscalls:sys_enter_openat %s
 
 tracepoint:syscalls:sys_enter_connect %s
 {
-  $sa = (struct sockaddr_in *)args->uservaddr;
-  if ($sa->sin_family == 2) {
-    printf("AS|TCP4|%%d|%%s|%%s|%%d\n", pid, comm, ntop($sa->sin_addr.s_addr), bswap($sa->sin_port));
+  $sa = (struct sockaddr *)args->uservaddr;
+  if ($sa->sa_family == 2) {
+    $sa4 = (struct sockaddr_in *)args->uservaddr;
+    printf("AS|TCP4|%%d|%%s|%%s|%%d\n", pid, comm, ntop($sa4->sin_addr.s_addr), bswap($sa4->sin_port));
+  }
+  if ($sa->sa_family == 10) {
+    $sa6 = (struct sockaddr_in6 *)args->uservaddr;
+    printf("AS|TCP6|%%d|%%s|%%s|%%d\n", pid, comm, ntop($sa6->sin6_addr.in6_u.u6_addr8), bswap($sa6->sin6_port));
   }
 }
-`, filter, filter, filter)
+%s`, filter, filter, filter, dnsProbe)
 }
 
 func (b *BPFTrace) filter() string {
@@ -114,6 +137,12 @@ func (b *BPFTrace) filter() string {
 		parts = append(parts, fmt.Sprintf(`comm == "%s"`, process))
 	}
 	return "/ " + strings.Join(parts, " || ") + " /"
+}
+
+func supportsDNSProbe() bool {
+	cmd := exec.Command("bpftrace", "-l", "uprobe:libc.so.6:getaddrinfo")
+	out, err := cmd.Output()
+	return err == nil && strings.Contains(string(out), "getaddrinfo")
 }
 
 func scanEvents(r io.Reader, out chan<- Event) error {
@@ -163,7 +192,10 @@ func parseLine(line string) (Event, error) {
 	case "FILE":
 		e.Kind = KindFile
 		e.Path = strings.Join(parts[4:], "|")
-	case "TCP4":
+	case "DNS":
+		e.Kind = KindDNS
+		e.Name = strings.Join(parts[4:], "|")
+	case "TCP4", "TCP6":
 		if len(parts) != 6 {
 			return Event{}, fmt.Errorf("invalid TCP observer event %q", line)
 		}
