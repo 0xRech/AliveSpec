@@ -94,8 +94,9 @@ func Run(args []string) error {
 				events = nil
 				continue
 			}
-			if collector.Add(event) {
-				printer.Event(event)
+			show, confidence := collector.Add(event)
+			if show {
+				printer.Event(event, confidence)
 			}
 		case observerErr, ok := <-errs:
 			if !ok {
@@ -113,7 +114,7 @@ func Run(args []string) error {
 		return err
 	}
 	eventCount, processCount, connectionCount, fileCount := collector.Counts()
-	printer.Summary(*name, time.Since(started), eventCount, processCount, connectionCount, fileCount, *out)
+	printer.Summary(*name, time.Since(started), eventCount, processCount, connectionCount, collector.DNSCount(), fileCount, *out)
 	return nil
 }
 
