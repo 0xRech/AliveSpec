@@ -2,47 +2,65 @@
 
 > **Learn how your system works while it works.**
 
-AliveSpec is an experimental **runtime-to-spec compiler** for operations.
+AliveSpec turns a known-good runtime into an **executable operational contract**.
 
-Instead of manually writing health checks, AliveSpec captures a known-good runtime state and turns it into an **executable operational contract**. Later, `alivespec verify` checks whether the conditions that made the system work are still true.
-
-## Why?
-
-Traditional monitoring can tell you that a server is up while the actual user journey is broken.
-
-AliveSpec asks a different question:
+Traditional monitoring can tell you that a server is online while a real user journey is broken. AliveSpec asks a different question:
 
 > **What conditions were true when this function worked — and are they still true now?**
 
-A contract can describe:
+## Status
 
-- required systemd services
+**v0.2.0-alpha.1** — Linux runtime-learning prototype.
+
+The new `record` command observes a successful journey through an eBPF-backed `bpftrace` adapter and compiles runtime evidence into readable YAML.
+
+Currently observed:
+
+- process execution / participating process names
+- outgoing IPv4 TCP connections
+- opened configuration-like files
+
+Existing contract checks also support:
+
+- systemd services
 - local TCP listeners
 - DNS resolution
 - TLS trust and certificate lifetime
-- required files and optional SHA-256 fingerprints
-
-Future versions will learn runtime dependencies automatically using eBPF and correlate them with named user journeys.
-
-## Status
-
-**v0.1 prototype / foundation.**
-
-The current `learn` command captures a Linux known-good baseline with explicit hints. The planned v0.2 observer will replace those hints with runtime observation.
+- file existence / SHA-256 fingerprints
 
 ## Quick start
 
+Requirements for runtime recording:
+
+- Linux
+- root or equivalent BPF capabilities
+- `bpftrace`
+
+Build AliveSpec:
+
 ```bash
 go build -o alivespec ./cmd/alivespec
+```
 
-sudo ./alivespec learn \
-  --name login \
-  --service nginx.service \
-  --dns ldap.example.internal \
-  --tls ldap.example.internal:636 \
-  --file /etc/myapp/config.yaml \
-  --out login.alivespec.yaml
+Record a successful journey:
 
+```bash
+sudo ./alivespec record login \
+  --comm nginx \
+  --comm myapp
+```
+
+Or use a fixed window:
+
+```bash
+sudo ./alivespec record document-upload \
+  --comm myapp \
+  --duration 30s
+```
+
+Then verify what was learned:
+
+```bash
 ./alivespec verify login.alivespec.yaml
 ```
 
@@ -52,76 +70,84 @@ Compare two contracts:
 ./alivespec diff before.yaml after.yaml
 ```
 
-## Contract example
+## Runtime learning
+
+A recording looks like this:
+
+```text
+ ALIVESPEC  /  RUNTIME LEARN
+────────────────────────────────────────────────────────────
+  journey     login
+  observer    eBPF / bpftrace
+  window      until Ctrl+C
+  processes   nginx, myapp
+  contract    login.alivespec.yaml
+────────────────────────────────────────────────────────────
+● recording runtime evidence…
+
+  20:13:04  PROC  myapp            /opt/myapp/app
+  20:13:06  TCP   myapp            10.10.20.15:5432
+  20:13:06  FILE  myapp            /etc/myapp/app.yaml
+```
+
+The generated contract keeps evidence provenance instead of pretending every observation is automatically a guaranteed dependency:
 
 ```yaml
-apiVersion: alivespec.dev/v1alpha1
-kind: OperationalContract
-metadata:
-  name: login
 requires:
-  services:
-    - name: nginx.service
-      active: true
-  listeners:
+  connections:
     - protocol: tcp
-      port: 443
-  dns:
-    - name: ldap.example.internal
-      resolves: true
-  tls:
-    - host: ldap.example.internal
-      port: 636
-      minValidityDays: 14
-  files:
-    - path: /etc/myapp/config.yaml
-      exists: true
+      host: 10.10.20.15
+      port: 5432
+      evidence:
+        source: observed
+        observations: 4
+        confidence: 0.9
+        processes:
+          - myapp
 ```
 
-## The end goal
+See [`docs/RUNTIME_RECORDING.md`](docs/RUNTIME_RECORDING.md) for the current recording model and limitations.
 
-```text
-alivespec learn "login"
-        │
-        ▼
-Observe a successful runtime journey
-        │
-        ▼
-Processes · DNS · TCP · TLS · files · services
-        │
-        ▼
-Executable Operational Contract
-        │
-        ├── alivespec verify
-        ├── alivespec diff
-        └── alivespec whatif   (planned)
-```
+## Manual learning
 
-The long-term goal is to answer questions like:
+The original explicit-hint mode remains available:
 
-```text
-What breaks if this certificate changes?
-Which successful journeys depend on db01:5432?
-What changed between the last known-good run and now?
+```bash
+sudo ./alivespec learn \
+  --name login \
+  --service nginx.service \
+  --dns ldap.example.internal \
+  --tls ldap.example.internal:636 \
+  --file /etc/myapp/config.yaml \
+  --out login.alivespec.yaml
 ```
 
 ## Design principles
 
-1. **Observed beats assumed.** Runtime evidence should be first-class.
-2. **No black box.** Generated contracts stay readable YAML.
-3. **Confidence matters.** Future dependencies will be tagged as observed, confirmed, inferred, or ignored.
+1. **Observed beats assumed.** Runtime evidence is first-class.
+2. **Evidence is not certainty.** Observed, declared and later confirmed dependencies stay distinguishable.
+3. **No black box.** Generated contracts remain readable YAML.
 4. **Local-first.** No cloud service is required.
-5. **Useful before AI.** Core verification remains deterministic.
+5. **Metadata only.** No packet payloads, credentials, private keys or file contents should be captured.
+6. **Useful before AI.** Core learning and verification remain deterministic.
+
+## Backend architecture
+
+`record` talks to an observer interface. The first Linux backend uses `bpftrace`, which keeps the Go build simple while the event and contract model stabilizes. A native `cilium/ebpf` backend is planned without changing the CLI or contract semantics.
 
 ## Roadmap
 
 See [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
-The major milestone is eBPF-based runtime learning: process execution, TCP connections, DNS activity, file opens and process-to-socket correlation.
+Long-term AliveSpec should be able to answer:
+
+```text
+What changed since the last known-good journey?
+Which journeys depend on this endpoint?
+What breaks if this certificate, DNS record or service changes?
+```
 
 ## Security
-
-AliveSpec observes operational metadata. It should **never capture application payloads, credentials, private keys, or secret values**.
 
 See [`SECURITY.md`](SECURITY.md).
 
