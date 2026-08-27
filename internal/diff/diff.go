@@ -3,6 +3,7 @@ package diff
 import (
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"sort"
 	"strings"
@@ -102,7 +103,7 @@ func flatten(c *spec.Contract) map[string]change {
 	}
 	for _, r := range c.Requires.Connections {
 		key := fmt.Sprintf("connection:%s:%s:%d", r.Protocol, r.Host, r.Port)
-		out[key] = change{kind: "connection", value: fmt.Sprintf("%s %s:%d", strings.ToUpper(r.Protocol), r.Host, r.Port)}
+		out[key] = change{kind: "connection", value: fmt.Sprintf("%s %s", strings.ToUpper(r.Protocol), net.JoinHostPort(r.Host, fmt.Sprint(r.Port)))}
 	}
 	for _, r := range c.Requires.DNS {
 		key := fmt.Sprintf("dns:%s:resolves=%t", r.Name, r.Resolves)
@@ -110,7 +111,7 @@ func flatten(c *spec.Contract) map[string]change {
 	}
 	for _, r := range c.Requires.TLS {
 		key := fmt.Sprintf("tls:%s:%d:minValidityDays=%d", r.Host, r.Port, r.MinValidityDays)
-		out[key] = change{kind: "tls", value: fmt.Sprintf("%s:%d · minimum %d days", r.Host, r.Port, r.MinValidityDays)}
+		out[key] = change{kind: "tls", value: fmt.Sprintf("%s · minimum %d days", net.JoinHostPort(r.Host, fmt.Sprint(r.Port)), r.MinValidityDays)}
 	}
 	for _, r := range c.Requires.Files {
 		key := fmt.Sprintf("file:%s:sha256=%s", r.Path, r.SHA256)
