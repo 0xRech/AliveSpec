@@ -42,7 +42,10 @@ func NewCollector(allFiles bool) *Collector {
 	}
 }
 
-func (c *Collector) Add(e observe.Event) {
+// Add stores an event and returns true when it is useful enough to show in the
+// normal live view. Raw file noise is still counted but hidden unless --all-files
+// is enabled.
+func (c *Collector) Add(e observe.Event) bool {
 	c.events++
 	if e.Process != "" {
 		p := c.processes[e.Process]
@@ -57,6 +60,8 @@ func (c *Collector) Add(e observe.Event) {
 	}
 
 	switch e.Kind {
+	case observe.KindProcess:
+		return true
 	case observe.KindTCP:
 		key := e.Host + ":" + itoa(e.Port)
 		item := c.connections[key]
@@ -68,9 +73,10 @@ func (c *Collector) Add(e observe.Event) {
 		if e.Process != "" {
 			item.processes[e.Process] = struct{}{}
 		}
+		return true
 	case observe.KindFile:
 		if !c.allFiles && !interestingFile(e.Path) {
-			return
+			return false
 		}
 		item := c.files[e.Path]
 		if item == nil {
@@ -81,6 +87,9 @@ func (c *Collector) Add(e observe.Event) {
 		if e.Process != "" {
 			item.processes[e.Process] = struct{}{}
 		}
+		return true
+	default:
+		return false
 	}
 }
 
