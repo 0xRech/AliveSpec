@@ -43,7 +43,7 @@ func Run(args []string) error {
 			return fmt.Errorf("usage: alivespec record [journey] [flags]")
 		}
 	}
-	if *name == "" {
+	if strings.TrimSpace(*name) == "" {
 		return fmt.Errorf("journey name cannot be empty")
 	}
 	if *color != "auto" && *color != "always" && *color != "never" {
@@ -53,7 +53,11 @@ func Run(args []string) error {
 		return fmt.Errorf("--duration cannot be negative")
 	}
 	if *out == "" {
-		*out = slug(*name) + ".alivespec.yaml"
+		filename := slug(*name)
+		if filename == "" {
+			filename = "journey"
+		}
+		*out = filename + ".alivespec.yaml"
 	}
 
 	observer, err := observe.NewBPFTrace(processes)
@@ -90,8 +94,9 @@ func Run(args []string) error {
 				events = nil
 				continue
 			}
-			collector.Add(event)
-			printer.Event(event)
+			if collector.Add(event) {
+				printer.Event(event)
+			}
 		case observerErr, ok := <-errs:
 			if !ok {
 				errs = nil
