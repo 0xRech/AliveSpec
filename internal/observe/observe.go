@@ -10,6 +10,7 @@ type Kind string
 const (
 	KindProcess Kind = "process"
 	KindTCP     Kind = "tcp"
+	KindDNS     Kind = "dns"
 	KindFile    Kind = "file"
 )
 
@@ -21,6 +22,7 @@ type Event struct {
 	Path    string
 	Host    string
 	Port    int
+	Name    string
 }
 
 type Observer interface {
