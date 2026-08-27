@@ -68,8 +68,9 @@ type ConnectionRequirement struct {
 }
 
 type DNSRequirement struct {
-	Name     string `yaml:"name"`
-	Resolves bool   `yaml:"resolves"`
+	Name     string   `yaml:"name"`
+	Resolves bool     `yaml:"resolves"`
+	Evidence Evidence `yaml:"evidence,omitempty"`
 }
 
 type TLSRequirement struct {
