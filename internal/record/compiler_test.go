@@ -10,8 +10,12 @@ import (
 func TestCollectorDeduplicatesConnectionEvidence(t *testing.T) {
 	c := NewCollector(false)
 	event := observe.Event{Time: time.Now(), Kind: observe.KindTCP, PID: 10, Process: "myapp", Host: "10.0.0.5", Port: 5432}
-	c.Add(event)
-	c.Add(event)
+	showFirst, _ := c.Add(event)
+	showSecond, _ := c.Add(event)
+
+	if !showFirst || showSecond {
+		t.Fatalf("expected only first repeated connection to be shown")
+	}
 
 	contract := c.Contract("login")
 	if len(contract.Requires.Connections) != 1 {
@@ -23,6 +27,29 @@ func TestCollectorDeduplicatesConnectionEvidence(t *testing.T) {
 	}
 	if len(got.Evidence.Processes) != 1 || got.Evidence.Processes[0] != "myapp" {
 		t.Fatalf("unexpected processes: %#v", got.Evidence.Processes)
+	}
+}
+
+func TestCollectorCompilesDNSEvidence(t *testing.T) {
+	c := NewCollector(false)
+	event := observe.Event{Kind: observe.KindDNS, Process: "myapp", Name: "db01.internal"}
+	showFirst, confidence := c.Add(event)
+	showSecond, _ := c.Add(event)
+
+	if !showFirst || showSecond {
+		t.Fatalf("expected DNS name to be shown only when first discovered")
+	}
+	if confidence != dnsConfidence {
+		t.Fatalf("unexpected DNS confidence: %v", confidence)
+	}
+
+	contract := c.Contract("login")
+	if len(contract.Requires.DNS) != 1 {
+		t.Fatalf("expected one DNS requirement, got %d", len(contract.Requires.DNS))
+	}
+	got := contract.Requires.DNS[0]
+	if got.Name != "db01.internal" || got.Evidence.Observations != 2 {
+		t.Fatalf("unexpected DNS requirement: %#v", got)
 	}
 }
 
@@ -42,12 +69,12 @@ func TestCollectorFiltersRuntimeFileNoise(t *testing.T) {
 
 func TestInterestingFile(t *testing.T) {
 	cases := map[string]bool{
-		"/etc/nginx/nginx.conf":       true,
-		"/opt/app/config/app.yaml":    true,
-		"/etc/resolv.conf":            true,
-		"/proc/123/status":            false,
-		"/usr/lib/x86_64-linux/a.so":  false,
-		"relative/config.yaml":        false,
+		"/etc/nginx/nginx.conf":      true,
+		"/opt/app/config/app.yaml":   true,
+		"/etc/resolv.conf":           true,
+		"/proc/123/status":           false,
+		"/usr/lib/x86_64-linux/a.so": false,
+		"relative/config.yaml":       false,
 	}
 	for path, want := range cases {
 		if got := interestingFile(path); got != want {
