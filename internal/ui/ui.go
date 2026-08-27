@@ -130,8 +130,7 @@ func (p *Printer) Check(ok bool, kind, target, detail string) {
 
 func (p *Printer) VerifySummary(passed, total int, elapsed time.Duration) {
 	healthy := passed == total
-	title := "AliveSpec · Contract Health"
-	p.boxTop(title)
+	p.boxTop("AliveSpec · Contract Health")
 	if healthy {
 		p.boxStatus("✓ HEALTHY", "32")
 	} else {
@@ -162,6 +161,10 @@ func (p *Printer) DiffChange(added bool, kind, value string) {
 		symbol = p.c("32", "+")
 	}
 	fmt.Fprintf(p.out, "  %s  %-11s %s\n", symbol, p.c("1", padRight(strings.ToUpper(kind), 11)), value)
+}
+
+func (p *Printer) DiffNoChanges() {
+	fmt.Fprintf(p.out, "  %s  No requirement changes detected.\n", p.c("32", "✓"))
 }
 
 func (p *Printer) DiffSummary(added, removed int) {
