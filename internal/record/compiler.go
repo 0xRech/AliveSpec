@@ -10,12 +10,25 @@ import (
 	"github.com/0xRech/AliveSpec/internal/spec"
 )
 
+const (
+	processConfidence    = 0.75
+	connectionConfidence = 0.90
+	dnsConfidence        = 0.65
+	fileConfidence       = 0.70
+)
+
 type processEvidence struct {
 	executable   string
 	observations int
+	displayed    bool
 }
 
 type connectionEvidence struct {
+	observations int
+	processes    map[string]struct{}
+}
+
+type dnsEvidence struct {
 	observations int
 	processes    map[string]struct{}
 }
@@ -30,6 +43,7 @@ type Collector struct {
 	events      int
 	processes   map[string]*processEvidence
 	connections map[string]*connectionEvidence
+	dns         map[string]*dnsEvidence
 	files       map[string]*fileEvidence
 }
 
@@ -38,14 +52,15 @@ func NewCollector(allFiles bool) *Collector {
 		allFiles:    allFiles,
 		processes:   map[string]*processEvidence{},
 		connections: map[string]*connectionEvidence{},
+		dns:         map[string]*dnsEvidence{},
 		files:       map[string]*fileEvidence{},
 	}
 }
 
-// Add stores an event and returns true when it is useful enough to show in the
-// normal live view. Raw file noise is still counted but hidden unless --all-files
-// is enabled.
-func (c *Collector) Add(e observe.Event) bool {
+// Add stores an event and returns whether it should be shown in the compact
+// live view plus the confidence of the discovered dependency. Repeated events
+// increase evidence counts without flooding the terminal.
+func (c *Collector) Add(e observe.Event) (bool, float64) {
 	c.events++
 	if e.Process != "" {
 		p := c.processes[e.Process]
@@ -61,10 +76,17 @@ func (c *Collector) Add(e observe.Event) bool {
 
 	switch e.Kind {
 	case observe.KindProcess:
-		return true
+		p := c.processes[e.Process]
+		if p != nil && !p.displayed {
+			p.displayed = true
+			return true, processConfidence
+		}
+		return false, processConfidence
+
 	case observe.KindTCP:
 		key := e.Host + ":" + itoa(e.Port)
 		item := c.connections[key]
+		isNew := item == nil
 		if item == nil {
 			item = &connectionEvidence{processes: map[string]struct{}{}}
 			c.connections[key] = item
@@ -73,12 +95,31 @@ func (c *Collector) Add(e observe.Event) bool {
 		if e.Process != "" {
 			item.processes[e.Process] = struct{}{}
 		}
-		return true
+		return isNew, connectionConfidence
+
+	case observe.KindDNS:
+		name := strings.TrimSpace(e.Name)
+		if name == "" {
+			return false, dnsConfidence
+		}
+		item := c.dns[name]
+		isNew := item == nil
+		if item == nil {
+			item = &dnsEvidence{processes: map[string]struct{}{}}
+			c.dns[name] = item
+		}
+		item.observations++
+		if e.Process != "" {
+			item.processes[e.Process] = struct{}{}
+		}
+		return isNew, dnsConfidence
+
 	case observe.KindFile:
 		if !c.allFiles && !interestingFile(e.Path) {
-			return false
+			return false, fileConfidence
 		}
 		item := c.files[e.Path]
+		isNew := item == nil
 		if item == nil {
 			item = &fileEvidence{processes: map[string]struct{}{}}
 			c.files[e.Path] = item
@@ -87,9 +128,9 @@ func (c *Collector) Add(e observe.Event) bool {
 		if e.Process != "" {
 			item.processes[e.Process] = struct{}{}
 		}
-		return true
+		return isNew, fileConfidence
 	default:
-		return false
+		return false, 0
 	}
 }
 
@@ -107,7 +148,7 @@ func (c *Collector) Contract(name string) *spec.Contract {
 			Evidence: spec.Evidence{
 				Source:       "observed",
 				Observations: p.observations,
-				Confidence:   0.75,
+				Confidence:   processConfidence,
 			},
 		})
 	}
@@ -123,7 +164,22 @@ func (c *Collector) Contract(name string) *spec.Contract {
 			Evidence: spec.Evidence{
 				Source:       "observed",
 				Observations: item.observations,
-				Confidence:   0.90,
+				Confidence:   connectionConfidence,
+				Processes:    sortedSet(item.processes),
+			},
+		})
+	}
+
+	dnsNames := sortedKeys(c.dns)
+	for _, name := range dnsNames {
+		item := c.dns[name]
+		contract.Requires.DNS = append(contract.Requires.DNS, spec.DNSRequirement{
+			Name:     name,
+			Resolves: true,
+			Evidence: spec.Evidence{
+				Source:       "observed",
+				Observations: item.observations,
+				Confidence:   dnsConfidence,
 				Processes:    sortedSet(item.processes),
 			},
 		})
@@ -138,7 +194,7 @@ func (c *Collector) Contract(name string) *spec.Contract {
 			Evidence: spec.Evidence{
 				Source:       "observed",
 				Observations: item.observations,
-				Confidence:   0.70,
+				Confidence:   fileConfidence,
 				Processes:    sortedSet(item.processes),
 			},
 		})
@@ -149,6 +205,10 @@ func (c *Collector) Contract(name string) *spec.Contract {
 
 func (c *Collector) Counts() (events, processes, connections, files int) {
 	return c.events, len(c.processes), len(c.connections), len(c.files)
+}
+
+func (c *Collector) DNSCount() int {
+	return len(c.dns)
 }
 
 func interestingFile(path string) bool {
