@@ -35,8 +35,7 @@ func NewBPFTrace(processes []string) (Observer, error) {
 func (b *BPFTrace) Name() string { return "eBPF / bpftrace" }
 
 func (b *BPFTrace) Start(ctx context.Context) (<-chan Event, <-chan error, error) {
-	script := b.script()
-	cmd := exec.CommandContext(ctx, "bpftrace", "-q", "-e", script)
+	cmd := exec.CommandContext(ctx, "bpftrace", "-q", "-e", b.script())
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, nil, err
@@ -50,19 +49,31 @@ func (b *BPFTrace) Start(ctx context.Context) (<-chan Event, <-chan error, error
 	}
 
 	events := make(chan Event, 256)
-	errs := make(chan error, 4)
+	errs := make(chan error, 2)
+	stdoutDone := make(chan error, 1)
+	stderrDone := make(chan string, 1)
 
 	go func() {
 		defer close(events)
-		scanEvents(stdout, events, errs)
+		stdoutDone <- scanEvents(stdout, events)
+	}()
+	go func() {
+		stderrDone <- scanStderr(stderr)
 	}()
 
-	go scanErrors(stderr, errs)
-
 	go func() {
-		err := cmd.Wait()
-		if err != nil && ctx.Err() == nil {
-			errs <- fmt.Errorf("bpftrace exited: %w", err)
+		scanErr := <-stdoutDone
+		stderrText := <-stderrDone
+		waitErr := cmd.Wait()
+		if scanErr != nil {
+			errs <- scanErr
+		}
+		if waitErr != nil && ctx.Err() == nil {
+			if stderrText != "" {
+				errs <- fmt.Errorf("bpftrace exited: %w: %s", waitErr, stderrText)
+			} else {
+				errs <- fmt.Errorf("bpftrace exited: %w", waitErr)
+			}
 		}
 		close(errs)
 	}()
@@ -105,7 +116,7 @@ func (b *BPFTrace) filter() string {
 	return "/ " + strings.Join(parts, " || ") + " /"
 }
 
-func scanEvents(r io.Reader, out chan<- Event, errs chan<- error) {
+func scanEvents(r io.Reader, out chan<- Event) error {
 	scanner := bufio.NewScanner(r)
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 1024*1024)
@@ -116,24 +127,23 @@ func scanEvents(r io.Reader, out chan<- Event, errs chan<- error) {
 		}
 		event, err := parseLine(line)
 		if err != nil {
-			errs <- err
-			continue
+			return err
 		}
 		out <- event
 	}
-	if err := scanner.Err(); err != nil {
-		errs <- err
-	}
+	return scanner.Err()
 }
 
-func scanErrors(r io.Reader, errs chan<- error) {
+func scanStderr(r io.Reader) string {
 	scanner := bufio.NewScanner(r)
+	var lines []string
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line != "" {
-			errs <- fmt.Errorf("bpftrace: %s", line)
+			lines = append(lines, line)
 		}
 	}
+	return strings.Join(lines, "; ")
 }
 
 func parseLine(line string) (Event, error) {
