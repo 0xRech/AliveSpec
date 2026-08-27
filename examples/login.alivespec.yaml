@@ -1,0 +1,29 @@
+apiVersion: alivespec.dev/v1alpha1
+kind: OperationalContract
+metadata:
+  name: login
+  host: app01
+requires:
+  services:
+    - name: nginx.service
+      active: true
+    - name: myapp.service
+      active: true
+  listeners:
+    - protocol: tcp
+      port: 443
+    - protocol: tcp
+      port: 8443
+  dns:
+    - name: ldap.example.internal
+      resolves: true
+    - name: db01.example.internal
+      resolves: true
+  tls:
+    - host: ldap.example.internal
+      port: 636
+      serverName: ldap.example.internal
+      minValidityDays: 14
+  files:
+    - path: /etc/myapp/config.yaml
+      exists: true
