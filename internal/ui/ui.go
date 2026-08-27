@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -62,22 +63,29 @@ func (p *Printer) RecordHeader(name, backend string, duration time.Duration, pro
 	p.section("DISCOVERED")
 }
 
-func (p *Printer) Event(e observe.Event) {
+func (p *Printer) Event(e observe.Event, confidence float64) {
 	process := e.Process
 	if process == "" {
 		process = "unknown"
 	}
 	stamp := p.c("90", e.Time.Format("15:04:05"))
+	confidenceHint := ""
+	if confidence > 0 && confidence < 0.80 {
+		confidenceHint = "  " + p.c("33", fmt.Sprintf("confidence %.0f%%", confidence*100))
+	}
 
 	switch e.Kind {
 	case observe.KindProcess:
-		fmt.Fprintf(p.out, "  %s  %s  %s\n", stamp, p.c("35", "◈ PROCESS   "), p.c("1", process))
+		fmt.Fprintf(p.out, "  %s  %s  %s%s\n", stamp, p.c("35", "◈ PROCESS   "), p.c("1", process), confidenceHint)
 		fmt.Fprintf(p.out, "            └─ %s\n\n", e.Path)
 	case observe.KindTCP:
-		fmt.Fprintf(p.out, "  %s  %s  %s\n", stamp, p.c("36", "↗ CONNECTION"), p.c("1", process))
-		fmt.Fprintf(p.out, "            └─ %s:%d\n\n", e.Host, e.Port)
+		fmt.Fprintf(p.out, "  %s  %s  %s%s\n", stamp, p.c("36", "↗ CONNECTION"), p.c("1", process), confidenceHint)
+		fmt.Fprintf(p.out, "            └─ %s\n\n", net.JoinHostPort(e.Host, fmt.Sprint(e.Port)))
+	case observe.KindDNS:
+		fmt.Fprintf(p.out, "  %s  %s  %s%s\n", stamp, p.c("33", "⌁ DNS       "), p.c("1", process), confidenceHint)
+		fmt.Fprintf(p.out, "            └─ %s\n\n", e.Name)
 	case observe.KindFile:
-		fmt.Fprintf(p.out, "  %s  %s  %s\n", stamp, p.c("34", "◫ FILE      "), p.c("1", process))
+		fmt.Fprintf(p.out, "  %s  %s  %s%s\n", stamp, p.c("34", "◫ FILE      "), p.c("1", process), confidenceHint)
 		fmt.Fprintf(p.out, "            └─ %s\n\n", e.Path)
 	}
 }
@@ -86,7 +94,7 @@ func (p *Printer) Warning(message string) {
 	fmt.Fprintf(p.out, "  %s  %s\n\n", p.c("33", "! WARNING"), message)
 }
 
-func (p *Printer) Summary(name string, elapsed time.Duration, events, processes, connections, files int, output string) {
+func (p *Printer) Summary(name string, elapsed time.Duration, events, processes, connections, dns, files int, output string) {
 	p.boxTop("AliveSpec · Contract Compiled")
 	p.boxStatus("✓ READY", "32")
 	p.boxBlank()
@@ -95,6 +103,7 @@ func (p *Printer) Summary(name string, elapsed time.Duration, events, processes,
 	p.boxRow("Events", fmt.Sprint(events))
 	p.boxRow("Processes", fmt.Sprint(processes))
 	p.boxRow("Connections", fmt.Sprint(connections))
+	p.boxRow("DNS names", fmt.Sprint(dns))
 	p.boxRow("Config files", fmt.Sprint(files))
 	p.boxBlank()
 	p.boxRow("Contract", output)
