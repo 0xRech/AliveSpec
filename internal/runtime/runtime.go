@@ -16,6 +16,29 @@ func IsServiceActive(name string) bool {
 	return exec.Command("systemctl", "is-active", "--quiet", name).Run() == nil
 }
 
+func IsProcessRunning(name string) bool {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, err := strconv.Atoi(entry.Name()); err != nil {
+			continue
+		}
+		data, err := os.ReadFile("/proc/" + entry.Name() + "/comm")
+		if err != nil {
+			continue
+		}
+		if strings.TrimSpace(string(data)) == name {
+			return true
+		}
+	}
+	return false
+}
+
 func TCPListeners() ([]int, error) {
 	ports := map[int]struct{}{}
 	var firstErr error

@@ -27,11 +27,27 @@ type Metadata struct {
 }
 
 type Requirements struct {
-	Services  []ServiceRequirement  `yaml:"services,omitempty"`
-	Listeners []ListenerRequirement `yaml:"listeners,omitempty"`
-	DNS       []DNSRequirement      `yaml:"dns,omitempty"`
-	TLS       []TLSRequirement      `yaml:"tls,omitempty"`
-	Files     []FileRequirement     `yaml:"files,omitempty"`
+	Processes   []ProcessRequirement    `yaml:"processes,omitempty"`
+	Services    []ServiceRequirement    `yaml:"services,omitempty"`
+	Listeners   []ListenerRequirement   `yaml:"listeners,omitempty"`
+	Connections []ConnectionRequirement `yaml:"connections,omitempty"`
+	DNS         []DNSRequirement        `yaml:"dns,omitempty"`
+	TLS         []TLSRequirement        `yaml:"tls,omitempty"`
+	Files       []FileRequirement       `yaml:"files,omitempty"`
+}
+
+type Evidence struct {
+	Source       string   `yaml:"source,omitempty"`
+	Observations int      `yaml:"observations,omitempty"`
+	Confidence   float64  `yaml:"confidence,omitempty"`
+	Processes    []string `yaml:"processes,omitempty"`
+}
+
+type ProcessRequirement struct {
+	Name       string   `yaml:"name"`
+	Executable string   `yaml:"executable,omitempty"`
+	Running    bool     `yaml:"running"`
+	Evidence   Evidence `yaml:"evidence,omitempty"`
 }
 
 type ServiceRequirement struct {
@@ -44,9 +60,17 @@ type ListenerRequirement struct {
 	Port     int    `yaml:"port"`
 }
 
+type ConnectionRequirement struct {
+	Protocol string   `yaml:"protocol"`
+	Host     string   `yaml:"host"`
+	Port     int      `yaml:"port"`
+	Evidence Evidence `yaml:"evidence,omitempty"`
+}
+
 type DNSRequirement struct {
-	Name     string `yaml:"name"`
-	Resolves bool   `yaml:"resolves"`
+	Name     string   `yaml:"name"`
+	Resolves bool     `yaml:"resolves"`
+	Evidence Evidence `yaml:"evidence,omitempty"`
 }
 
 type TLSRequirement struct {
@@ -57,9 +81,10 @@ type TLSRequirement struct {
 }
 
 type FileRequirement struct {
-	Path   string `yaml:"path"`
-	Exists bool   `yaml:"exists"`
-	SHA256 string `yaml:"sha256,omitempty"`
+	Path     string   `yaml:"path"`
+	Exists   bool     `yaml:"exists"`
+	SHA256   string   `yaml:"sha256,omitempty"`
+	Evidence Evidence `yaml:"evidence,omitempty"`
 }
 
 func New(name, host string) *Contract {
@@ -101,6 +126,11 @@ func (c Contract) Validate() error {
 	}
 	if c.Metadata.Name == "" {
 		return fmt.Errorf("metadata.name is required")
+	}
+	for _, r := range c.Requires.Connections {
+		if r.Protocol == "" || r.Host == "" || r.Port < 1 || r.Port > 65535 {
+			return fmt.Errorf("invalid connection requirement %s://%s:%d", r.Protocol, r.Host, r.Port)
+		}
 	}
 	return nil
 }
