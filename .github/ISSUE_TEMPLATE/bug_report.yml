@@ -1,0 +1,169 @@
+name: Bug report
+description: Report a reproducible problem with AliveSpec
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve AliveSpec.
+
+        AliveSpec is currently experimental alpha software. Please include enough environment and reproduction details for us to distinguish AliveSpec bugs from kernel, permission, resolver, or `bpftrace` limitations.
+
+        **Security:** Do not include credentials, tokens, private keys, confidential hostnames, sensitive file contents, or other secrets. Redact logs and contracts before submitting them.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      description: Which part of AliveSpec appears to be affected?
+      options:
+        - Runtime recording (`alivespec record`)
+        - Contract verification (`alivespec verify`)
+        - Contract diff (`alivespec diff`)
+        - Manual learning (`alivespec learn`)
+        - Process discovery
+        - TCP / IPv4 / IPv6 discovery
+        - DNS discovery
+        - File discovery
+        - TLS verification
+        - CLI / terminal UI
+        - Build / installation
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: AliveSpec version
+      description: Run `alivespec version`. If you built from source, include the commit SHA if known.
+      placeholder: "v0.2.0-alpha.1 / commit abc1234"
+    validations:
+      required: true
+
+  - type: input
+    id: distro
+    attributes:
+      label: Linux distribution
+      placeholder: "Ubuntu 24.04, Debian 13, Arch Linux, ..."
+    validations:
+      required: true
+
+  - type: input
+    id: kernel
+    attributes:
+      label: Kernel version and architecture
+      description: Output of `uname -a` or at least kernel version + architecture.
+      placeholder: "6.14.0-xx-generic · x86_64"
+    validations:
+      required: true
+
+  - type: input
+    id: bpftrace
+    attributes:
+      label: bpftrace version
+      description: Run `bpftrace --version`. Enter `not applicable` if the bug does not involve runtime recording.
+      placeholder: "bpftrace v0.xx.x"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: privileges
+    attributes:
+      label: How was AliveSpec run?
+      options:
+        - As root / with sudo
+        - With BPF-related Linux capabilities
+        - As an unprivileged user
+        - Not applicable
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Command used
+      description: Paste the exact AliveSpec command that triggered the problem. Redact sensitive names if necessary.
+      render: shell
+      placeholder: |
+        sudo ./alivespec record login --comm myapp --duration 30s
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Give the smallest reliable sequence that reproduces the problem.
+      placeholder: |
+        1. Start AliveSpec with ...
+        2. Trigger ...
+        3. Stop recording ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: "AliveSpec should ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: "Instead, AliveSpec ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant terminal output or logs
+      description: Include the smallest useful output. Redact secrets and sensitive infrastructure details.
+      render: text
+      placeholder: |
+        Paste relevant output here.
+    validations:
+      required: false
+
+  - type: textarea
+    id: contract
+    attributes:
+      label: Relevant contract snippet
+      description: If the generated or verified YAML is relevant, paste only the affected section and redact sensitive values.
+      render: yaml
+      placeholder: |
+        requires:
+          connections:
+            - protocol: tcp
+              host: REDACTED
+              port: 443
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Containers, VM, WSL, unusual resolver setup, security tooling, AppArmor/SELinux, custom kernel, screenshots, or anything else that may matter.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checklist
+      options:
+        - label: I searched existing issues for the same problem.
+          required: true
+        - label: I can reproduce this problem on the version listed above.
+          required: true
+        - label: I removed credentials, tokens, private keys, confidential file contents, and other secrets from this report.
+          required: true
+        - label: I understand that observed runtime evidence may depend on Linux kernel, permissions, resolver implementation, and the current `bpftrace` backend.
+          required: true
