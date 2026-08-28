@@ -8,37 +8,56 @@ Traditional monitoring can tell you that a server is online while a real user jo
 
 > **What conditions were true when this function worked — and are they still true now?**
 
+> [!WARNING]
+> AliveSpec is currently **experimental alpha software**. The runtime observer is Linux-only, requires elevated BPF permissions, and currently uses `bpftrace` as its first eBPF backend.
+
 ## Status
 
 **v0.2.0-alpha.1** — Linux runtime-learning prototype.
 
-The new `record` command observes a successful journey through an eBPF-backed `bpftrace` adapter and compiles runtime evidence into readable YAML.
+The `record` command observes a successful journey and compiles runtime evidence into readable YAML.
 
 Currently observed:
 
 - process execution / participating process names
-- outgoing IPv4 TCP connections
+- outgoing IPv4 and IPv6 TCP connections
+- best-effort DNS lookups via glibc `getaddrinfo()`
 - opened configuration-like files
+- evidence counts and confidence metadata
 
 Existing contract checks also support:
 
 - systemd services
 - local TCP listeners
+- learned TCP dependencies
 - DNS resolution
 - TLS trust and certificate lifetime
+- process presence
 - file existence / SHA-256 fingerprints
 
-## Quick start
+## Requirements
 
-Requirements for runtime recording:
+Runtime recording currently requires:
 
 - Linux
-- root or equivalent BPF capabilities
+- Go 1.23+ to build from source
 - `bpftrace`
+- root or equivalent BPF capabilities
+
+Example package installation on Debian/Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install bpftrace
+```
+
+## Quick start
 
 Build AliveSpec:
 
 ```bash
+git clone https://github.com/0xRech/AliveSpec.git
+cd AliveSpec
 go build -o alivespec ./cmd/alivespec
 ```
 
@@ -50,7 +69,7 @@ sudo ./alivespec record login \
   --comm myapp
 ```
 
-Or use a fixed window:
+Or use a fixed recording window:
 
 ```bash
 sudo ./alivespec record document-upload \
@@ -72,25 +91,38 @@ Compare two contracts:
 
 ## Runtime learning
 
-A recording looks like this:
+A recording uses AliveSpec's compact **Modern Ops** terminal UI:
 
 ```text
- ALIVESPEC  /  RUNTIME LEARN
-────────────────────────────────────────────────────────────
-  journey     login
-  observer    eBPF / bpftrace
-  window      until Ctrl+C
-  processes   nginx, myapp
-  contract    login.alivespec.yaml
-────────────────────────────────────────────────────────────
-● recording runtime evidence…
+╭─ AliveSpec · Runtime Learning ──────────────────────────────────────╮
+│  ● RECORDING                                                       │
+│                                                                    │
+│  Journey       login                                               │
+│  Window        until Ctrl+C                                        │
+│  Observer      eBPF / bpftrace · DNS enabled                       │
+│  Processes     nginx, myapp                                        │
+│  Contract      login.alivespec.yaml                                │
+╰────────────────────────────────────────────────────────────────────╯
 
-  20:13:04  PROC  myapp            /opt/myapp/app
-  20:13:06  TCP   myapp            10.10.20.15:5432
-  20:13:06  FILE  myapp            /etc/myapp/app.yaml
+  DISCOVERED
+
+  20:23:04  ◈ PROCESS     myapp
+            └─ /opt/myapp/app
+
+  20:23:05  ⌁ DNS         myapp  confidence 65%
+            └─ db01.internal
+
+  20:23:05  ↗ CONNECTION  myapp
+            └─ 10.10.20.15:5432
+
+  20:23:06  ↗ CONNECTION  myapp
+            └─ [2001:db8::20]:443
+
+  20:23:07  ◫ FILE        myapp  confidence 70%
+            └─ /etc/myapp/app.yaml
 ```
 
-The generated contract keeps evidence provenance instead of pretending every observation is automatically a guaranteed dependency:
+Repeated events do not flood the terminal. They increase the evidence count in the generated contract instead:
 
 ```yaml
 requires:
@@ -100,11 +132,13 @@ requires:
       port: 5432
       evidence:
         source: observed
-        observations: 4
+        observations: 501
         confidence: 0.9
         processes:
           - myapp
 ```
+
+DNS learning is intentionally **best effort**. The current backend enables a glibc `getaddrinfo()` uprobe only when the probe is available. Static resolvers and non-glibc runtimes may therefore not expose DNS names yet.
 
 See [`docs/RUNTIME_RECORDING.md`](docs/RUNTIME_RECORDING.md) for the current recording model and limitations.
 
@@ -121,6 +155,32 @@ sudo ./alivespec learn \
   --file /etc/myapp/config.yaml \
   --out login.alivespec.yaml
 ```
+
+## Verify
+
+AliveSpec can re-check learned or declared conditions later:
+
+```text
+╭─ AliveSpec · Contract Verification ────────────────────────────────╮
+│  ● VERIFYING                                                       │
+│                                                                    │
+│  Journey       login                                               │
+│  Contract      login.alivespec.yaml                                │
+╰────────────────────────────────────────────────────────────────────╯
+
+  CHECKS
+
+  ✓  PROCESS     myapp
+                 └─ running
+
+  ✓  CONNECTION  10.10.20.15:5432
+                 └─ TCP reachable
+
+  ✕  FILE        /etc/myapp/app.yaml
+                 └─ SHA-256 changed
+```
+
+A degraded verification returns a non-zero exit code, making AliveSpec usable in CI/CD pipelines.
 
 ## Design principles
 
@@ -150,6 +210,12 @@ What breaks if this certificate, DNS record or service changes?
 ## Security
 
 See [`SECURITY.md`](SECURITY.md).
+
+## Contributing
+
+Issues and pull requests are welcome while the project is in alpha. For runtime-observer changes, please document what metadata is captured and what permissions are required.
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 
